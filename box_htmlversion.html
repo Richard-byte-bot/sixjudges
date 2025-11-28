@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>COMMAND Puzzle</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            max-width: 600px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 0.5rem;
+        }
+        .input-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 0.4rem 0.6rem;
+            font-size: 1rem;
+        }
+        button {
+            padding: 0.4rem 0.8rem;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .error {
+            color: #d32f2f;
+            margin: 0.25rem 0 0.75rem;
+        }
+        .info {
+            margin: 0.25rem 0 0.75rem;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 0.75rem;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 0.4rem 0.6rem;
+            text-align: left;
+        }
+        th {
+            background-color: #f5f5f5;
+        }
+        .hidden {
+            display: none;
+        }
+        .success {
+            text-align: center;      /* 让整条 congrats 居中 */
+            margin-top: 1rem;
+            font-size: 1.1rem;
+        }
+        .answer-word {
+            display: block;          /* 换行 */
+            margin-top: 0.5rem;
+            color: #00a444;   /* 绿色 */
+            font-size: 1.6rem;       /* 变大 */
+            text-align: center;      /* 居中 */
+        }
+        #message {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="input-row">
+    <input id="wordInput" type="text" placeholder="Enter an English word (A-Z only)">
+    <button id="checkBtn">Check</button>
+</div>
+
+<div id="message"></div>
+
+<table id="resultTable" class="hidden">
+    <thead>
+    <tr>
+        <th>Judge</th>
+        <th>Result</th>
+    </tr>
+    </thead>
+    <tbody id="resultBody">
+    <!-- rows injected dynamically -->
+    </tbody>
+</table>
+
+<div id="finalHint"></div>
+
+<script>
+    // ====== Game constants (mirror Python version) ======
+    const TARGET = "COMMAND";
+    const VOWELS = new Set(["A", "E", "I", "O", "U"]);
+    const LOGIC_WORDS = new Set([
+        "AND", "OR", "NOT", "XOR",
+        "NOR", "NAND", "XNOR",
+    ]);
+
+    let WORD_LIST = null;
+
+    fetch("words.json")
+        .then(r => r.json())
+        .then(list => {
+            WORD_LIST = new Set(list);
+            console.log("Word list loaded:", WORD_LIST.size, "words");
+        });
+
+
+    // ====== Utility: normalize input like Python normalize_input() ======
+    function normalizeInput(raw) {
+        const word = raw.trim().toUpperCase();
+        if (!word) return "";
+        // only A-Z
+        if (!/^[A-Z]+$/.test(word)) {
+            return "";
+        }
+        return word;
+    }
+
+    // ====== Judge functions (JS version of your Python judges) ======
+    function judgeLen7(word) {
+        return word.length === 7;
+    }
+
+    function judgeTwoVowels(word) {
+        let count = 0;
+        for (const ch of word) {
+            if (VOWELS.has(ch)) count++;
+        }
+        return count === 2;
+    }
+
+    function judgeOneAdjacentDouble(word) {
+        const positions = [];
+        for (let i = 0; i < word.length - 1; i++) {
+            if (word[i] === word[i + 1]) {
+                positions.push(i);
+            }
+        }
+        return positions.length === 1;
+    }
+
+    function judgeConsonantStartEnd(word) {
+        if (!word) return false;
+        return !VOWELS.has(word[0]) && !VOWELS.has(word[word.length - 1]);
+    }
+
+    function judgeContainsMan(word) {
+        return word.includes("MAN");
+    }
+
+    function judgeContainsLogic(word) {
+        for (const op of LOGIC_WORDS) {
+            if (word.includes(op)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    const JUDGES = [
+        ["📏", judgeLen7],
+        ["🎵", judgeTwoVowels],
+        ["👯", judgeOneAdjacentDouble],
+        ["↔️", judgeConsonantStartEnd],
+        ["👨", judgeContainsMan],
+        ["⚙️", judgeContainsLogic],
+    ];
+
+    // ====== Main check function ======
+    function checkWord() {
+        if (!WORD_LIST) {
+            alert("Word list is still loading... please try again in a moment.");
+            return;
+        }
+
+        const inputEl = document.getElementById("wordInput");
+        const msgEl = document.getElementById("message");
+        const tableEl = document.getElementById("resultTable");
+        const tbodyEl = document.getElementById("resultBody");
+        const finalHintEl = document.getElementById("finalHint");
+
+        // Clear previous output
+        msgEl.textContent = "";
+        msgEl.className = "";
+        tbodyEl.innerHTML = "";
+        tableEl.classList.add("hidden");
+        finalHintEl.textContent = "";
+        finalHintEl.className = "";
+
+        const raw = inputEl.value;
+        const word = normalizeInput(raw);
+
+        if (!word) {
+            msgEl.textContent = "Invalid input.";
+            msgEl.className = "error";
+            return;
+        }
+
+        if (word.length <= 1) {
+            msgEl.textContent = "Not in word list.";
+            msgEl.className = "error";
+            return;
+        }
+
+        if (!WORD_LIST.has(word)) {
+            msgEl.textContent = "Not in word list.";
+            msgEl.className = "error";
+            return;
+        }
+
+        // Passed basic checks → show judges table
+        let allOk = true;
+        for (const [emoji, fn] of JUDGES) {
+            const ok = fn(word);
+            const tr = document.createElement("tr");
+
+            const tdJudge = document.createElement("td");
+            tdJudge.textContent = emoji;
+
+            const tdResult = document.createElement("td");
+            tdResult.textContent = ok ? "✅" : "❌";
+
+            tr.appendChild(tdJudge);
+            tr.appendChild(tdResult);
+            tbodyEl.appendChild(tr);
+
+            if (!ok) allOk = false;
+        }
+
+        tableEl.classList.remove("hidden");
+
+        if (allOk) {
+            if (word === TARGET) {
+                finalHintEl.innerHTML = 'Congratulations! The final answer is: <span class="answer-word">COMMAND</span>';
+                finalHintEl.className = "success";
+            } else {
+                finalHintEl.textContent = "All the judges are satisfied, but this is not the intended solution.";
+                finalHintEl.className = "success";
+            }
+        }
+    }
+
+    document.getElementById("checkBtn").addEventListener("click", checkWord);
+
+    // 允许回车提交
+    document.getElementById("wordInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            checkWord();
+        }
+    });
+</script>
+</body>
+</html>
